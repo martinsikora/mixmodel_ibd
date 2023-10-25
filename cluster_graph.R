@@ -385,7 +385,7 @@ g_plots_terminal <- cl_final_terminal %>%
 l_all <- create_layout(g_plots_all, "partition", circular = TRUE)
 l_terminal <- create_layout(g_plots_terminal, "partition", circular = TRUE)
 
-h <- vcount(g_plots_all) %/% 200
+h <- vcount(g_plots_all) %/% 150
 
 pdf(args$out_file_pdf,
     width = h + 3,
@@ -418,8 +418,12 @@ p +
     ) +
     scale_edge_width(range = c(0.25, 0.5)) +
     scale_fill_viridis() +
+    coord_cartesian(clip = "off") +
     theme_void() +
-    theme(legend.position = "right")
+    theme(
+        legend.position = "right",
+        plot.margin = unit(rep(50, 4), "points")
+    )
 
 p <- ggraph(l_terminal)
 p +
@@ -447,8 +451,12 @@ p +
     ) +
     scale_edge_width(range = c(0.25, 0.5)) +
     scale_fill_viridis() +
+    coord_cartesian(clip = "off") +
     theme_void() +
-    theme(legend.position = "right")
+    theme(
+        legend.position = "right",
+        plot.margin = unit(rep(50, 4), "points")
+    )
 dev.off()
 
 cat("__ writing output __\n")
