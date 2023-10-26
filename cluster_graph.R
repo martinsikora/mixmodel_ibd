@@ -102,7 +102,7 @@ parser$add_argument("--ibd_min",
     action = "store",
     dest = "ibd_min",
     type = "double",
-    default = 10,
+    default = 5,
     help = "Minimum total IBD length for edge to keep [default %(default)s]"
 )
 
