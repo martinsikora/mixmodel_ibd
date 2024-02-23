@@ -48,7 +48,7 @@ get_pval_perm <- function(g_full, nodes, cl_membership, n_perm, res_p) {
 
         ## modularities for clustering of rewired graphs
         m_perm <- future_map_dbl(seq_len(n_perm), ~ {
-            ## rewire network
+            ## rewire network, keeping degree distribution
             g_perm <- rewire(g_sub, each_edge(p = 1))
 
             ## cluster with observed resolution parameter
@@ -319,7 +319,7 @@ cat("__ calculating p-values __\n")
 cl_final <- bind_rows(l_cl) %>%
     group_by(cluster_id_parent) %>%
     mutate(
-        cluster_p_val = get_pval_perm(g, sample_id, cluster_id, args$n_perm, resolution_parameter) # nolint
+        cluster_p_val = get_pval_perm(g, sample_id, cluster_id, args$n_perm, resolution_parameter[1]) # nolint
     ) %>%
     ungroup() %>%
     arrange(cluster_id_parent, cluster_id) %>%
