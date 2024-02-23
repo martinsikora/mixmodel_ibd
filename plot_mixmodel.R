@@ -43,6 +43,12 @@ parser$add_argument("-s", "--sample_file",
     help = "File with sample to population mapping"
 )
 
+parser$add_argument("-g", "--group_file",
+    action = "store",
+    dest = "group_file",
+    help = "File with sample to group mapping"
+)
+
 parser$add_argument("-o", "--out",
     action = "store",
     dest = "out_file",
@@ -74,6 +80,10 @@ d_mixmodel <- read_tsv(args$in_file,
 )
 
 sample_map <- read_tsv(args$sample_file,
+    col_types = "cc"
+)
+
+group_map <- read_tsv(args$group_file,
     col_types = "cc"
 )
 
@@ -119,18 +129,30 @@ th <- theme_bw() +
         panel.spacing = unit(0.1, "lines")
     )
 
-w <- d_mixmodel %>%
-    pull(sample_id) %>%
-    unique() %>%
-    length() %/% 15 + 3
+## source pops
+d_s <- group_map %>%
+    filter(group == "source") %>%
+    left_join(sample_map) %>%
+    select(-group) %>%
+    mutate(
+        source_pop = pop_id,
+        p = 1,
+        se = 0
+    )
 
 ## plot data
 d1 <- d_mixmodel %>%
+    bind_rows(d_s) %>%
     mutate(
         sample_id = factor(sample_id, levels = sample_map$sample_id),
         pop_id = factor(pop_id, levels = color_map$pop_id),
         source_pop = factor(source_pop, levels = color_map$pop_id)
     )
+
+w <- d1 %>%
+    pull(sample_id) %>%
+    unique() %>%
+    length() %/% 15 + 3
 
 
 ## --------------------------------------------------
@@ -169,6 +191,12 @@ if (args$source_grid) {
             ),
             linewidth = 0.25,
             width = 0.25,
+        ) +
+        geom_text(
+            y = 0.5,
+            label = "S",
+            size = 2,
+            data = d_s,
         ) +
         geom_hline(
             yintercept = c(0, 1),
@@ -244,6 +272,12 @@ if (args$source_grid) {
             width = 0.25,
             data = d2
         ) +
+        geom_text(
+            y = 0.5,
+            label = "S",
+            size = 2,
+            data = d_s,
+        ) +
         geom_hline(
             yintercept = c(0, 1),
             linewidth = 0.25
@@ -261,10 +295,10 @@ if (args$source_grid) {
             values = pal_c
         ) +
         scale_size_manual(values = c(0.2, 0)) +
-        coord_cartesian(ylim = c(0, 1)) +
+        coord_cartesian(ylim = c(0, 1.01)) +
         xlab("") +
         ylab("") +
-        guides(fill = guide_legend(nrow = 2)) +
+        guides(fill = guide_legend(nrow = 1)) +
         th)
 
     dev.off()
