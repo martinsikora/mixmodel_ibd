@@ -26,6 +26,7 @@ suppressPackageStartupMessages(library(furrr))
 suppressPackageStartupMessages(library(data.tree))
 suppressPackageStartupMessages(library(ggraph))
 suppressPackageStartupMessages(library(tidygraph))
+suppressPackageStartupMessages(library(multidplyr))
 
 
 ## --------------------------------------------------
@@ -47,23 +48,15 @@ get_pval_perm <- function(g_full, nodes, cl_membership, n_perm, res_p) {
         m_obs <- modularity(g_sub, cl_idx, E(g_sub)$weight)
 
         ## modularities for clustering of rewired graphs
-        m_perm <- future_map_dbl(seq_len(n_perm), ~ {
-            ## rewire network, keeping degree distribution
+        m_perm <- map_dbl(seq_len(n_perm), ~ {
+            ## rewire network and redistribute edge weights
             g_perm <- rewire(g_sub, each_edge(p = 1))
-
-            ## cluster with observed resolution parameter
-            cl_perm <- cluster_leiden(
-                graph = g_perm,
-                objective_function = "modularity",
-                resolution_parameter = res_p
-            ) %>%
-                membership()
+            E(g_perm)$weight <- sample(E(g_sub)$weight)
 
             ## modularity of permuted clustering
-            r <- modularity(g_perm, cl_perm, E(g_perm)$weight)
+            r <- modularity(g_perm, cl_idx, E(g_perm)$weight)
             r
-        }, .options = furrr_options(seed = TRUE))
-
+        })
         p_val <- 1 - ecdf(m_perm)(m_obs)
         p_val
     }
@@ -163,8 +156,8 @@ parser$add_argument("-t", "--threads",
 )
 
 args <- parser$parse_args()
-plan(multisession, workers = args$threads)
 
+cluster_worker <- new_cluster(args$threads)
 
 ## --------------------------------------------------
 ## read input data
@@ -223,7 +216,7 @@ l_cl <- vector("list", length = args$level_max)
 ## loop over clustering until either all samples are clustered
 ## or maximum number of levels reached
 
-while (i < args$level_max & !is_clustered) {
+while (i < args$level_max && !is_clustered) {
     cat("clustering level", i + 1, "\r")
 
     ## split node IDs into current clusters
@@ -316,12 +309,16 @@ while (i < args$level_max & !is_clustered) {
 ## assemble final clustering table, get p-value and add sample labels
 cat("__ calculating p-values __\n")
 
+cluster_copy(cluster_worker, c("get_pval_perm", "g", "args"))
+cluster_library(cluster_worker, c("igraph", "purrr"))
+
 cl_final <- bind_rows(l_cl) %>%
     group_by(cluster_id_parent) %>%
+    partition(cluster_worker) %>%
     mutate(
         cluster_p_val = get_pval_perm(g, sample_id, cluster_id, args$n_perm, resolution_parameter[1]) # nolint
     ) %>%
-    ungroup() %>%
+    collect() %>%
     arrange(cluster_id_parent, cluster_id) %>%
     left_join(sample_label) %>%
     select(
@@ -335,10 +332,24 @@ cl_final <- bind_rows(l_cl) %>%
 
 cat("__ plotting __\n")
 
-### find last clustering level with p-val < cutoff for each sample
+## find highest clustering level with all p-val < cutoff
+## and modularity > 0 for each sample
+
 cl_level_terminal <- cl_final %>%
+    arrange(cluster_level) %>%
     group_by(sample_id) %>%
-    summarise(cluster_level_terminal = cluster_level[max(which(cluster_p_val <= 0.05 & cluster_modularity > 0))])
+    mutate(
+        sig_idx = diff(c(TRUE, cluster_p_val <= args$p_val & cluster_modularity > 0))
+    ) %>%
+    summarise(
+        cluster_level_terminal = cluster_level[min(
+            which(sig_idx == -1) - 1
+        )]
+    ) %>%
+    mutate(cluster_level_terminal = case_when(
+        is.na(cluster_level_terminal) ~ 1,
+        TRUE ~ cluster_level_terminal
+    ))
 
 cl_final_terminal <- cl_final %>%
     left_join(cl_level_terminal) %>%
@@ -358,8 +369,8 @@ g_plots_all <- cl_final %>%
     as_tbl_graph() %>%
     activate(nodes) %>%
     mutate(
-        cluster_modularity = cl_final_terminal$cluster_modularity[match(name, cl_final_terminal$cluster_id_parent)],
-        ibd_avg = cl_final_terminal$ibd_avg[match(name, cl_final_terminal$cluster_id_parent)],
+        cluster_modularity = cl_final$cluster_modularity[match(name, cl_final$cluster_id_parent)],
+        ibd_avg = cl_final$ibd_avg[match(name, cl_final$cluster_id_parent)],
         label = paste(name, sample_label$label[match(name, sample_label$sample_id)], sep = " / ")
     )
 
@@ -388,13 +399,13 @@ l_terminal <- create_layout(g_plots_terminal, "partition", circular = TRUE)
 h <- vcount(g_plots_all) %/% 150
 
 pdf(args$out_file_pdf,
-    width = h + 3,
-    height = h
+    width = h + 9,
+    height = h + 7
 )
 
 p <- ggraph(l_all)
 p +
-    geom_edge_diagonal(
+    geom_edge_diagonal0(
         color = "grey40",
         lineend = "round",
         edge_width = 0.25
@@ -413,11 +424,14 @@ p +
             angle = node_angle(x, y),
             label = label
         ),
-        hjust = 0,
-        size = 1
+        hjust = "outward",
+        size = 1.5
     ) +
     scale_edge_width(range = c(0.25, 0.5)) +
-    scale_fill_viridis() +
+    scale_fill_gradient2(
+        low = "royalblue3",
+        high = "firebrick3"
+    ) +
     coord_cartesian(clip = "off") +
     theme_void() +
     theme(
@@ -427,7 +441,7 @@ p +
 
 p <- ggraph(l_terminal)
 p +
-    geom_edge_diagonal(
+    geom_edge_diagonal0(
         color = "grey40",
         lineend = "round",
         edge_width = 0.25
@@ -446,11 +460,14 @@ p +
             angle = node_angle(x, y),
             label = label
         ),
-        hjust = 0,
-        size = 1
+        hjust = "outward",
+        size = 1.5
     ) +
     scale_edge_width(range = c(0.25, 0.5)) +
-    scale_fill_viridis() +
+    scale_fill_gradient2(
+        low = "royalblue3",
+        high = "firebrick3"
+    ) +
     coord_cartesian(clip = "off") +
     theme_void() +
     theme(
