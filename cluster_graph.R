@@ -260,6 +260,18 @@ while (i < args$level_max && !is_clustered) {
             ) %>%
                 membership()
 
+            ## average IBD sharing within subgraphs
+            cl_ibd <- map_dfr(1:max(cl_membership), function(i){
+                g1 <- induced_subgraph(
+                    graph = g_cl, 
+                    vids = names(cl_membership[cl_membership == i])
+                )
+                tibble(
+                    cluster_index = as.character(i),
+                    ibd_avg = mean(E(g1)$weight)
+                )
+            })
+
             ## return tibble with results
             tibble(
                 cluster_index = as.character(cl_membership),
@@ -268,8 +280,8 @@ while (i < args$level_max && !is_clustered) {
                 cluster_level = i + 1,
                 resolution_parameter = res,
                 cluster_modularity = modularity(g_cl, cl_membership, E(g_cl)$weight), # nolint
-                ibd_avg = mean(E(g_cl)$weight),
-            )
+            ) %>%
+                left_join(cl_ibd)
         }
     })
 
@@ -341,7 +353,7 @@ g_plots_all <- cl_final %>%
     activate(nodes) %>%
     mutate(
         cluster_modularity = cl_final$cluster_modularity[match(name, cl_final$cluster_id_parent)],
-        ibd_avg = cl_final$ibd_avg[match(name, cl_final$cluster_id_parent)],
+        ibd_avg = cl_final$ibd_avg[match(name, cl_final$cluster_id)],
         label = paste(
             name, sample_label$label[match(name, sample_label$sample_id)],
             sep = " / "

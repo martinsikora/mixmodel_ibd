@@ -122,7 +122,6 @@ cl_final <- cl_res %>%
 
 cat("__ plotting __\n")
 
-
 ## convert to graph
 g_plots_terminal <- cl_final %>%
     filter(cluster_type != "descendant_nonsig") %>%
@@ -138,7 +137,11 @@ g_plots_terminal <- cl_final %>%
     as_tbl_graph() %>%
     activate(nodes) %>%
     mutate(
-        cluster_modularity = cl_final$cluster_modularity[match(name, cl_final$cluster_id)],
+        cluster_modularity = cl_final$cluster_modularity[match(name, cl_final$cluster_id_parent)],
+        cluster_modularity = case_when(
+            cluster_modularity >= args$modularity ~ cluster_modularity,
+            TRUE ~ NA
+        ),
         ibd_avg = cl_final$ibd_avg[match(name, cl_final$cluster_id)],
         label = paste(
             name, sample_label$label[match(name, sample_label$sample_id)],
@@ -184,10 +187,7 @@ p +
         size = 1.5
     ) +
     scale_edge_width(range = c(0.25, 0.5)) +
-    scale_fill_gradient2(
-        low = "royalblue3",
-        high = "firebrick3"
-    ) +
+    scale_fill_viridis(na.value = "white") +
     coord_cartesian(clip = "off") +
     theme_void() +
     theme(
