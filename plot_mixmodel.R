@@ -18,6 +18,7 @@ suppressPackageStartupMessages(library(argparse))
 suppressPackageStartupMessages(library(readr))
 suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(stringr))
 
 
 ## --------------------------------------------------
@@ -149,10 +150,22 @@ d1 <- d_mixmodel %>%
         source_pop = factor(source_pop, levels = color_map$pop_id)
     )
 
+d_s1 <- d_s %>%
+    mutate(
+        sample_id = factor(sample_id, levels = sample_map$sample_id),
+        pop_id = factor(pop_id, levels = color_map$pop_id),
+        source_pop = factor(source_pop, levels = color_map$pop_id)
+    )
+
 w <- d1 %>%
     pull(sample_id) %>%
     unique() %>%
     length() %/% 15 + 3
+
+h <- d1 %>%
+    pull(sample_id) %>%
+    str_length() %>%
+    max() %/% 20
 
 
 ## --------------------------------------------------
@@ -161,14 +174,14 @@ w <- d1 %>%
 cat("__ generating plot __\n")
 
 if (args$source_grid) {
-    h <- d_mixmodel %>%
+    h1 <- d_mixmodel %>%
         pull(source_pop) %>%
         unique() %>%
         length() %/% 1.5 + 3
 
     pdf(args$out_file,
         width = w,
-        height = h
+        height = h + h1
     )
 
     p <- ggplot(d1, aes(
@@ -196,7 +209,7 @@ if (args$source_grid) {
             y = 0.5,
             label = "S",
             size = 2,
-            data = d_s,
+            data = d_s1,
         ) +
         geom_hline(
             yintercept = c(0, 1),
@@ -229,7 +242,6 @@ if (args$source_grid) {
 
     dev.off()
 } else {
-    h <- 5.5
 
     d1_m <- d1 %>%
         filter(p >= args$min_p) %>%
@@ -247,7 +259,7 @@ if (args$source_grid) {
 
     pdf(args$out_file,
         width = w,
-        height = h
+        height = h + 3
     )
 
     p <- ggplot(d1, aes(
@@ -276,7 +288,7 @@ if (args$source_grid) {
             y = 0.5,
             label = "S",
             size = 2,
-            data = d_s,
+            data = d_s1,
         ) +
         geom_hline(
             yintercept = c(0, 1),
@@ -284,7 +296,7 @@ if (args$source_grid) {
         ) +
         facet_grid(. ~ pop_id,
             space = "free_x",
-            scales = "free_x"
+            scales = "free_x",
         ) +
         scale_fill_manual(
             name = "Source population",
