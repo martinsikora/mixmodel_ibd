@@ -63,7 +63,7 @@ ibd <- read_tsv(args$ibd_file,
 
 cat("__ reading metadata __\n")
 sample_map <- read_tsv(args$sample_file,
-    col_types = "cc"
+    col_types = "ccc"
 )
 
 
@@ -91,23 +91,26 @@ ibd <- bind_rows(ibd, ibd1) %>%
         suffix = c("1", "2")
     )
 
-## count number of samples per population
-pop_size <- sample_map %>%
-    filter(pop_id != "exclude") %>%
+## count number of donor samples per population
+pop_size_donor <- sample_map %>%
+    filter(group == "donor_recipient") %>%
     count(pop_id)
 
-## select samples to use for between population sharing
+
+## select samples to use for between population sharing of full donor populations
 ## has to be n-1 to match sample sizes for within population sharing
 ## defaults to random sample per population
 ## if args$first, remove first sample for population in sample_map table instead
 if (args$first) {
     samples_donor_between <- sample_map %>%
-        filter(pop_id %in% pop_size$pop_id[pop_size$n > 1]) %>%
+        filter(group == "donor_recipient", 
+               pop_id %in% pop_size_donor$pop_id[pop_size_donor$n > 1]) %>%
         group_by(pop_id) %>%
         slice(2:n())
 } else {
     samples_donor_between <- sample_map %>%
-        filter(pop_id %in% pop_size$pop_id[pop_size$n > 1]) %>%
+        filter(group == "donor_recipient",
+               pop_id %in% pop_size_donor$pop_id[pop_size_donor$n > 1]) %>%
         group_by(pop_id) %>%
         sample_n(size = n() - 1)
 }
@@ -116,15 +119,16 @@ if (args$first) {
 ## --------------------------------------------------
 ## aggregate IBD sharing
 
-## total IBD shared with n-1 individuals of same population
+## total IBD shared with n-1 donor individuals of same population
 ibd_within <- ibd %>%
-    filter(pop_id1 == pop_id2) %>%
+    filter(group2 == "donor_recipient",
+           pop_id1 == pop_id2) %>%
     group_by(chrom, sample1, pop_id1, pop_id2) %>%
     summarise(
         ibd = sum(ibd),
         .groups = "drop"
     ) %>%
-    left_join(pop_size,
+    left_join(pop_size_donor,
         by = c("pop_id2" = "pop_id")
     ) %>%
     mutate(n_inds = n - 1) %>%
@@ -134,6 +138,7 @@ ibd_within <- ibd %>%
 ## total IBD shared with n-1 individuals of different populations
 ibd_between <- ibd %>%
     filter(
+        group2 == "donor_recipient",
         pop_id1 != pop_id2,
         sample2 %in% samples_donor_between$sample_id
     ) %>%
@@ -142,7 +147,7 @@ ibd_between <- ibd %>%
         ibd = sum(ibd),
         .groups = "drop"
     ) %>%
-    left_join(pop_size,
+    left_join(pop_size_donor,
         by = c("pop_id2" = "pop_id")
     ) %>%
     mutate(n_inds = n - 1) %>%

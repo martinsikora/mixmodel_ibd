@@ -76,7 +76,7 @@ ibd_pop <- map_dfr(args$files, ~ {
 })
 
 sample_map <- read_tsv(args$sample_file,
-    col_types = "cc"
+    col_types = "ccc"
 )
 
 color_map <- read_tsv(args$color_file,
