@@ -44,12 +44,6 @@ parser$add_argument("-s", "--sample_file",
     help = "File with sample to population mapping"
 )
 
-parser$add_argument("-g", "--group_file",
-    action = "store",
-    dest = "group_file",
-    help = "File with sample to group mapping"
-)
-
 parser$add_argument("-o", "--out",
     action = "store",
     dest = "out_file",
@@ -77,14 +71,10 @@ args <- parser$parse_args()
 cat("__ reading data __\n")
 
 d_mixmodel <- read_tsv(args$in_file,
-    col_types = "cccddd"
+    col_types = "ccccddd"
 )
 
 sample_map <- read_tsv(args$sample_file,
-    col_types = "cc"
-)
-
-group_map <- read_tsv(args$group_file,
     col_types = "cc"
 )
 
@@ -130,27 +120,17 @@ th <- theme_bw() +
         panel.spacing = unit(0.1, "lines")
     )
 
-## source pops
-d_s <- group_map %>%
-    filter(group == "source") %>%
-    left_join(sample_map) %>%
-    select(-group) %>%
-    mutate(
-        source_pop = pop_id,
-        p = 1,
-        se = 0
-    )
 
 ## plot data
 d1 <- d_mixmodel %>%
-    bind_rows(d_s) %>%
     mutate(
         sample_id = factor(sample_id, levels = sample_map$sample_id),
         pop_id = factor(pop_id, levels = color_map$pop_id),
         source_pop = factor(source_pop, levels = color_map$pop_id)
     )
 
-d_s1 <- d_s %>%
+d_s1 <- d_mixmodel %>%
+    filter(group == "source") %>%
     mutate(
         sample_id = factor(sample_id, levels = sample_map$sample_id),
         pop_id = factor(pop_id, levels = color_map$pop_id),
@@ -242,7 +222,6 @@ if (args$source_grid) {
 
     dev.off()
 } else {
-
     d1_m <- d1 %>%
         filter(p >= args$min_p) %>%
         select(sample_id, source_pop)
@@ -259,7 +238,7 @@ if (args$source_grid) {
 
     pdf(args$out_file,
         width = w,
-        height = h + 3
+        height = h + 4
     )
 
     p <- ggplot(d1, aes(
@@ -290,6 +269,16 @@ if (args$source_grid) {
             size = 2,
             data = d_s1,
         ) +
+        geom_point(
+            aes(
+                size = res_norm,
+                alpha = res_norm
+            ),
+            fill = "grey",
+            color = "grey40",
+            y = 1.05,
+            shape = 22
+        ) +
         geom_hline(
             yintercept = c(0, 1),
             linewidth = 0.25
@@ -306,8 +295,9 @@ if (args$source_grid) {
             name = "Source population",
             values = pal_c
         ) +
-        scale_size_manual(values = c(0.2, 0)) +
-        coord_cartesian(ylim = c(0, 1.01)) +
+        scale_size_continuous(range = c(0.1, 2)) +
+        scale_alpha_continuous(range = c(0.1, 1)) +
+        coord_cartesian(ylim = c(0, 1.07)) +
         xlab("") +
         ylab("") +
         guides(fill = guide_legend(nrow = 1)) +
