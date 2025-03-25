@@ -51,9 +51,13 @@ get_pval_perm <- function(g_full, nodes, cl_membership, n_perm, res_p) {
             ## rewire network and redistribute edge weights
             g_perm <- rewire(g_sub, each_edge(p = 1))
             E(g_perm)$weight <- sample(E(g_sub)$weight)
-
+            cl_perm <- cluster_leiden(
+                graph = g_perm,
+                objective_function = "modularity",
+                resolution_parameter = res_p
+            ) 
             ## modularity of permuted clustering
-            r <- modularity(g_perm, cl_idx, E(g_perm)$weight)
+            r <- modularity(g_perm, membership(cl_perm), E(g_perm)$weight)
             r
         })
         p_val <- 1 - ecdf(m_perm)(m_obs)
@@ -157,7 +161,7 @@ cat("__ reading IBD data __\n")
 d <- map_dfr(args$files, ~ {
     r <- read_tsv(.x,
         col_names = c("sample1", "sample2", "chrom", "ibd"),
-        col_types = "ccid"
+        col_types = "cccd"
     )
     r
 })
@@ -386,6 +390,7 @@ p +
             size = ibd_avg,
             fill = cluster_modularity
         ),
+        color = "grey",
         shape = 21,
     ) +
     geom_node_text(
@@ -396,6 +401,16 @@ p +
         ),
         hjust = "outward",
         size = 1.5
+    ) +
+    geom_node_text(
+        aes(
+            filter = !is.na(cluster_modularity),
+            label = formatC(cluster_modularity, 
+                format = "f", 
+                digits = 4)
+        ),
+        hjust = "center",
+        size = 1
     ) +
     scale_edge_width(range = c(0.25, 0.5)) +
     scale_fill_gradient2(
@@ -409,7 +424,7 @@ p +
         plot.margin = unit(rep(50, 4), "points")
     )
 dev.off()
-
+ 
 cat("__ writing output __\n")
 
 write_tsv(cl_final,
