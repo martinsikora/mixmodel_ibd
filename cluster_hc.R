@@ -71,6 +71,14 @@ parser$add_argument("--out_hm",
     help = "Output heatmap filename"
 )
 
+parser$add_argument("--clust_method",
+    action = "store",
+    dest = "clust_method",
+    type = "character",
+    default = "ward.D2",
+    help = "Clustering method for hclust [default %(default)s]"
+)
+
 parser$add_argument("--heights",
     action = "store",
     dest = "heights",
@@ -122,7 +130,7 @@ d <- map_dfr(args$files, ~ {
 
 cat("__ reading metadata __\n")
 sample_label <- read_tsv(args$sample_file,
-    col_types = "cc"
+    col_types = "ccc"
 )
 
 
@@ -133,7 +141,7 @@ cat("__ clustering __\n")
 
 ## helpers
 inds <- sample_label %>%
-    filter(label != "exclude") %>%
+    filter(group != "exclude") %>%
     pull(sample_id)
 
 heights <- args$heights %>%
@@ -165,21 +173,29 @@ m <- bind_rows(d1, d2, d3) %>%
     column_to_rownames("sample1") %>%
     as.matrix()
 m <- m[inds, inds]
-m_d <- parDist(m, threads = args$threads)
+m_d <- parDist(m, threads = args$threads) %>%
+    as.matrix()
 
-## clustering
-res_hc <- hclust(m_d, method = "ward.D2")
+## clustering of full clustering indivduals
+inds_cl_full <- sample_label %>%
+    filter(group == "cluster_full") %>%
+    pull(sample_id)
+
+res_hc <- hclust(
+    d = as.dist(m_d[inds_cl_full, inds_cl_full]),
+    method = args$clust_method
+)
 
 res_hc_cut <- future_map_dfr(heights, ~ {
     r1 <- cutreeDynamic(res_hc,
-        distM = as.matrix(m_d),
+        distM = m_d[inds_cl_full, inds_cl_full],
         method = "hybrid",
         deepSplit = args$deep_split,
         minClusterSize = args$cl_size,
         cutHeight = .x
     )
     r2 <- tibble(
-        sample_id = inds,
+        sample_id = inds_cl_full,
         cluster_terminal = r1,
         cut_height = .x
     ) %>%
@@ -254,6 +270,26 @@ cl_final <- bind_rows(cl_2, cl_1) %>%
     arrange(sample_id)
 
 
+## add min dist clustering individuals to cluster with lowest distance
+inds_cl_min <- sample_label %>%
+    filter(group == "cluster_min_dist") %>%
+    pull(sample_id)
+
+if (length(inds_cl_min) > 0) {
+    cl_final_inds_cl_min <- map_dfr(inds_cl_min, ~ {
+        idx_min_dist <- which(m_d[.x, inds_cl_full] == min(m_d[.x, inds_cl_full]))
+        if (length(idx_min_dist) > 1) {
+            idx_min_dist <- sample(idx_min_dist, 1)
+        }
+        cl_final %>%
+            filter(sample_id == inds_cl_full[idx_min_dist]) %>%
+            select(sample_id:cluster_level) %>%
+            mutate(sample_id = .x) %>%
+            left_join(sample_label)
+    })
+    cl_final <- bind_rows(cl_final, cl_final_inds_cl_min)
+}
+
 ## --------------------------------------------------
 ## plot cluster hierarchies
 
@@ -277,7 +313,6 @@ pdf(args$out_file_cl,
     width = w + 7,
     height = w + 7
 )
-
 
 walk(unique(heights), ~ {
     cl <- cl_final %>%
@@ -315,7 +350,7 @@ walk(unique(heights), ~ {
         ) +
         geom_node_point(aes(
             filter = leaf,
-            color = cluster_id
+            color = cluster_id,
         )) +
         geom_node_text(
             aes(
@@ -351,7 +386,15 @@ pal_c <- colorRampPalette(c(rev(scico(20, palette = "davos")), "black"))(1000)
 cl_dendro <- res_hc %>%
     as.dendrogram()
 
-m_l <- log10(m)
+m1 <- m[inds_cl_full, inds_cl_full]
+lab <- paste(inds_cl_full,
+    sample_label$label[match(inds_cl_full, sample_label$sample_id)],
+    sep = " / "
+)
+colnames(m1) <- lab
+rownames(m1) <- lab
+
+m_l <- log10(m1)
 m_l[m_l == -Inf] <- 0
 
 pdf(
@@ -361,7 +404,10 @@ pdf(
 )
 walk(unique(heights), ~ {
     cl <- cl_final %>%
-        filter(cut_height == .x)
+        filter(
+            cut_height == .x,
+            group == "cluster_full"
+        )
 
     cl_ids <- cl %>%
         count(cluster_id, sort = T) %>%
@@ -373,15 +419,15 @@ walk(unique(heights), ~ {
     pal_c2 <- pal_c1[cl$cluster_id]
     names(pal_c2) <- cl$sample_id
 
-    heatmap3(m,
+    heatmap3(m1,
         scale = "none",
         col = pal_c,
         bg = pal_c,
         symm = TRUE,
         ColSideLabs = paste("cluster height ", .x),
-        ColSideColors = pal_c2[colnames(m)],
+        ColSideColors = pal_c2[inds_cl_full],
         RowSideLabs = "",
-        useRaster = TRUE,
+        useRaster = FALSE,
         cexRow = 0.25,
         cexCol = 0.25,
         Rowv = cl_dendro,
@@ -393,9 +439,9 @@ walk(unique(heights), ~ {
         col = pal_c,
         bg = pal_c,
         ColSideLabs = paste("cluster height ", .x),
-        ColSideColors = pal_c2[colnames(m)],
+        ColSideColors = pal_c2[inds_cl_full],
         RowSideLabs = "",
-        useRaster = TRUE,
+        useRaster = FALSE,
         cexRow = 0.25,
         cexCol = 0.25,
         Rowv = cl_dendro,
