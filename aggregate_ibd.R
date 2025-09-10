@@ -57,7 +57,7 @@ args <- parser$parse_args()
 cat("__ reading IBD data __\n")
 ibd <- read_tsv(args$ibd_file,
     col_names = c("sample1", "sample2", "chrom", "ibd"),
-    col_types = "ccid"
+    col_types = "cccd"
 )
 
 
