@@ -145,7 +145,6 @@ sample_map <- read_tsv(args$sample_file,
 )
 
 group_map <- read_tsv(args$group_file,
-    col_types = "cc"
 )
 
 n_markers <- read_tsv(args$length_file,
@@ -266,9 +265,8 @@ p_jk <- foreach(i = chroms) %dopar% {
     p_chrom
 }
 
-
 ## --------------------------------------------------
-## combine and estimate standard errors, write output
+## combine and estimate standard errors, add sources, write output
 
 p_full <- bind_rows(p_genome, p_jk) %>%
     arrange(chrom) %>%
@@ -289,12 +287,25 @@ p_full <- bind_rows(p_genome, p_jk) %>%
     left_join(sample_map,
         by = c("sample_id" = "sample_id")
     ) %>%
-    select(sample_id, pop_id, source_pop, p, se, res_norm)
+    mutate(group = "target") %>%
+    select(sample_id, pop_id, group, source_pop, p, se, res_norm)
 
+p_source <- group_map %>%
+    filter(
+        group == "source",
+    ) %>%
+    select(sample_id, group) %>%
+    left_join(sample_map) %>%
+    mutate(
+        source_pop = pop_id,
+        p = 1,
+        se = 0)
+ 
+o <- bind_rows(p_full, p_source)
 
 cat("__ writing output __\n")
 
-write_tsv(p_full,
+write_tsv(o,
     file = args$out_file
 )
 
